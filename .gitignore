@@ -1,0 +1,6 @@
+#El entorno virtual
+venv/
+
+#Cualquier carpeta __pycache__
+__pycache__/
+.vscode/
