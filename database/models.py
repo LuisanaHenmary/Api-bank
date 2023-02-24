@@ -16,7 +16,7 @@ from peewee import (
 mysql_db = MySQLDatabase(
     'bank', #Nombre de la dase de datos
     user='root',
-    password='Cardenas1612$', #Si es otra cambie el valor
+    password='', #Si es otra cambie el valor
     host='localhost',
     port=3306
 )
