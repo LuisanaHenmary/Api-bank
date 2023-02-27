@@ -180,7 +180,7 @@ def to_transfer(receiver: str = Path(
     return transaction
 
 @app.get(
-    path="/balance/{enum}",
+    path="/balance/{num_account}",
     tags=["Bank actions"],
 )
 def inquiry_balance(num_account: int = Path(
