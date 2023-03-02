@@ -6,6 +6,8 @@ from fastapi import (
     Path
 )
 
+import threading
+
 from models.person import Person
 from models.account import (
     Account,
@@ -29,6 +31,8 @@ from helpers.bank_actions import (
 )
 
 app = FastAPI()
+
+lock = threading.Lock()
 
 @app.get("/")
 def read_root():
@@ -96,6 +100,9 @@ def to_deposit(
 ):
     amount = transaction.amount
     try:
+
+        lock.acquire()
+        
         ci, num_account, old_balance = login(transaction.username, transaction.password)
         
         new_balance = old_balance + amount
@@ -104,7 +111,10 @@ def to_deposit(
         
         insert_transaction(ci,num_account,"Deposit", amount)
         
+        lock.release()
+
     except Exception:
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password"
@@ -121,6 +131,9 @@ def to_withdrawal(transaction: TransactionSegutity=Body(...)):
 
     amount = transaction.amount
     try:
+
+        lock.acquire()
+
         ci, num_account, old_balance = login(transaction.username, transaction.password)
         
         new_balance = old_balance - amount
@@ -128,7 +141,9 @@ def to_withdrawal(transaction: TransactionSegutity=Body(...)):
         update_balance(num_account,new_balance)
         
         insert_transaction(ci,num_account,"Withdrawal",(amount*(-1)))
-        
+
+        lock.release()
+
     except Exception:
         raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -151,6 +166,9 @@ def to_transfer(receiver: str = Path(
 
     amount = transaction.amount
     try:
+
+        lock.acquire()
+
         ci, num_account, old_amount = login(transaction.username, transaction.password)
 
         query = (c.
@@ -169,6 +187,8 @@ def to_transfer(receiver: str = Path(
 
         insert_transaction(ci,num_account,"Transfer",(amount*(-1)))
         insert_transaction(reciver_ci,reciver_num,"Transfer",amount)
+
+        lock.release()
 
     except Exception as err:
         print(err)
