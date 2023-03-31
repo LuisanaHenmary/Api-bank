@@ -1,34 +1,23 @@
-from database.models import (
-    AccountsBank,
-    Transactions
+from pymongo import MongoClient
+from .exceptions import (
+    InsufficientBalance
 )
 
 #Estas son funciones mas usadas en los enpoints
 
-import datetime
+client = MongoClient('localhost', 27017)
+db = client["bank"]
+people_collection = db["people"]
+account_collection = db["accounts"]
+transaction_collection = db["transactions"]
 
-def login(username, password):
-    query = (AccountsBank.
-    select()
-    .where((AccountsBank.username == username) & (AccountsBank.password == password))
-    )
+def update_balance(transaction):
+    account_select = account_collection.find_one({"number_account":transaction["number_account"]})
+    old_balance = account_select["balance"]
+    new_balance = old_balance + transaction["amount"]
 
-    ci = query[0].ci_id
-    num_account = query[0].num_account
-    old_balance = query[0].balance
+    if new_balance < 0:
+            raise InsufficientBalance()
 
-    return (ci, num_account, old_balance)
-
-def insert_transaction(ci, num_account, transaction_type, amount):
-    Transactions.insert(
-    ci_id = ci,
-    num_account_id = num_account,
-    type_tranction = transaction_type,
-    amount = amount
-    ).execute()
-
-def update_balance(num_account, new_balance):
-    AccountsBank.update(
-    balance = new_balance,
-    updated_at = datetime.datetime.now()
-    ).where(AccountsBank.num_account == num_account).execute()
+    account_collection.find_one_and_update({
+        "number_account":transaction["number_account"]},{"$set":{"balance":new_balance}})
