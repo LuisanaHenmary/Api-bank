@@ -1,7 +1,11 @@
 from pydantic import (
     BaseModel,
-    Field
+    Field,
+    
 )
+
+from datetime import datetime
+from typing import Optional
 
 class Account(BaseModel):
 
@@ -12,19 +16,9 @@ class Account(BaseModel):
         example='V-26852997'
     )
 
-    username: str = Field(
-        ...,
-        max_length=30,
-        title="Nombre de usuario",
-        description="Es el nombre de usuario",
-        example='Luisana16'
-    )
-
-    type_account: str  = Field(
-        ...,
-        title="Tipo de cuenta",
-        description="Es el tipo de cuenta bancaria",
-        example="Ahorro"
+    number_account: Optional[int] = Field(
+        title="numero de cuenta",
+        description="Es el numero de cuenta",
     )
 
     balance: int = Field(
@@ -34,13 +28,8 @@ class Account(BaseModel):
         example=0
     )
 
-
-class AccountRegister(Account):
-    password: str = Field(
-        ...,
-        min_length=8,
-        max_length=64,
-        title="Contrasenha",
-        description="La contrasenha de la cuenta",
-        example="noUseThisPassword00"
+    created_at: Optional[datetime] = Field(
+        default=None,
+        title="fecha de apertura",
+        description="Es la fecha en que fue creada"
     )
