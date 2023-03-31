@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import (
     FastAPI,
     status,
@@ -6,27 +8,29 @@ from fastapi import (
     Path
 )
 
-import threading
+from datetime import datetime
+from uuid import uuid4
 
 from models.person import Person
-from models.account import (
-    Account,
-    AccountRegister
-)
+
+from models.account import Account
 
 from models.transaction import (
-    TransactionBase,
-    TransactionSegutity
+    Transaction,
+    Transference
 )
 
-from database.models import (
-    People as p,
-    AccountsBank as c
+from helpers.exceptions import (
+    CIExist,
+    CIDontExist,
+    AccountDontExist,
+    InsufficientBalance
 )
 
 from helpers.bank_actions import (
-    login,
-    insert_transaction,
+    people_collection,
+    account_collection,
+    transaction_collection,
     update_balance
 )
 
@@ -45,185 +49,181 @@ def read_root():
     status_code=status.HTTP_201_CREATED,
     summary="Registers a new user"
 )
-def register_people(people: Person=Body(...)):
+def register_person(person: Person=Body(...)):
 
     try:
-        p.insert(
-            ci=people.ci,
-            name=people.name,
-            age=people.age,
-            phone_number=people.phone
-        ).execute()
-    except Exception as error:
-        number_error, message_error = error.args
+        if people_collection.count_documents({'ci':person.ci}) > 0:
+            raise CIExist(person.ci)
+        
+        people_collection.insert_one(dict(person))
+        
+    except CIExist as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"error {number_error}: {message_error}"
+            detail=str(error)
         )
     
-    return people
+    return person
 
 @app.post(
     path="/add/account",
     tags=["Add"],
-    response_model=Account,
     status_code=status.HTTP_201_CREATED,
     summary="Registers a new account"
 )
-def add_account(account: AccountRegister=Body(...)):
+def add_account(account: Account=Body(...)):
 
     try:
-        c.insert(
-            ci_id = account.ci,
-            username = account.username,
-            type_account = account.type_account,
-            balance = account.balance,
-            password = account.password
-        ).execute()
-    except Exception as error:
-        number_error, message_error = error.args
+
+        if people_collection.count_documents({"ci":account.ci}) == 0:
+            raise CIDontExist(account.ci)
+
+        account.number_account = account_collection.count_documents({})
+        account.created_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        account_collection.insert_one(dict(account))
+
+    except CIDontExist as error:
+        
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"error {number_error}: {message_error}"
+            status_code=status.HTTP_406_NOT_ACCEPTABLE,
+            detail=str(error)
         )
 
     return account
-    
 
 @app.put(
     path="/to/deposit",
-    tags=["Bank actions"],
-    response_model=TransactionBase
+    tags=["Bank actions"]
 )
 def to_deposit(
-    transaction: TransactionSegutity=Body(...)
+    transaction: Transaction=Body(...)
 ):
-    amount = transaction.amount
-    try:
-
-        lock.acquire()
-        
-        ci, num_account, old_balance = login(transaction.username, transaction.password)
-        
-        new_balance = old_balance + amount
-
-        update_balance(num_account,new_balance)
-        
-        insert_transaction(ci,num_account,"Deposit", amount)
-        
-        lock.release()
-
-    except Exception:
-
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
-        )
     
+    try:
+        if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
+            raise AccountDontExist(transaction.number_account)
+
+        update_balance(dict(transaction))
+
+        transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
+
+        while True:
+            aux = str(uuid4())
+
+            if transaction_collection.count_documents({"transactional_code":aux}) == 0:
+                transaction.transactional_code = aux
+                break
+
+        
+        transaction_collection.insert_one(dict(transaction))
+            
+    except AccountDontExist as error:
+        raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=str(error)
+        )
+
     return transaction
 
 @app.put(
     path="/to/withdrawal",
-    tags=["Bank actions"],
-    response_model=TransactionBase
+    tags=["Bank actions"]
 )
-def to_withdrawal(transaction: TransactionSegutity=Body(...)):
+def to_withdrawal(transaction: Transaction=Body(...)):
 
-    amount = transaction.amount
     try:
+        if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
+            raise AccountDontExist(transaction.number_account)
 
-        lock.acquire()
+        transaction.amount = transaction.amount*(-1)
+        update_balance(dict(transaction))
 
-        ci, num_account, old_balance = login(transaction.username, transaction.password)
+        transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
+
+        while True:
+            aux = str(uuid4())
+
+            if transaction_collection.count_documents({"transactional_code":aux}) == 0:
+                transaction.transactional_code = aux
+                break
+
+        transaction_collection.insert_one(dict(transaction))
         
-        new_balance = old_balance - amount
-
-        update_balance(num_account,new_balance)
-        
-        insert_transaction(ci,num_account,"Withdrawal",(amount*(-1)))
-
-        lock.release()
-
-    except Exception:
+    except AccountDontExist as error:
         raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid username or password"
+        detail=str(error)
+        )
+    except InsufficientBalance as error:
+        raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail=str(error)
         )
 
     return transaction
 
 @app.put(
-    path="/to/transfer/{receiver}",
-    tags=["Bank actions"],
-    response_model=TransactionBase
+    path="/to/transfer",
+    tags=["Bank actions"]
 )
-def to_transfer(receiver: str = Path(
-    ..., title="Nombre del usuario del receptor",
-    description="El nombre del usuario del receptor"
-    ),
-    transaction: TransactionSegutity=Body(...)
-    ):
-
-    amount = transaction.amount
+def to_transfer(transaction: Transference=Body(...)):
     try:
+        if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
+            raise AccountDontExist(transaction.number_account)
 
-        lock.acquire()
+        if account_collection.count_documents({"number_account":transaction.number_account_receiver}) == 0:
+            raise AccountDontExist(transaction.number_account_receiver)
 
-        ci, num_account, old_amount = login(transaction.username, transaction.password)
+        update_balance({
+            "number_account":transaction.number_account,
+            "amount":transaction.amount*(-1)
+        })
 
-        query = (c.
-        select()
-        .where(c.username == receiver)
-        )
+        update_balance({
+            "number_account":transaction.number_account_receiver,
+            "amount":transaction.amount
+        })
 
-        reciver_ci = query[0].ci_id
-        reciver_num = query[0].num_account
+        transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
 
-        transmitter_balance = old_amount - amount
-        receiver_balance = query[0].balance + amount
+        while True:
+            aux = str(uuid4())
 
-        update_balance(num_account,transmitter_balance)
-        update_balance(reciver_num,receiver_balance)
+            if transaction_collection.count_documents({"transactional_code":aux}) == 0:
+                transaction.transactional_code = aux
+                break
+        
+        transaction_collection.insert_one(dict(transaction))
 
-        insert_transaction(ci,num_account,"Transfer",(amount*(-1)))
-        insert_transaction(reciver_ci,reciver_num,"Transfer",amount)
+        return transaction
 
-        lock.release()
-
-    except Exception as err:
-        print(err)
+    except AccountDontExist as error:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password"
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=str(error)
         )
-
-    return transaction
+    except InsufficientBalance as error:
+        raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail=str(error)
+        )
 
 @app.get(
-    path="/balance/{num_account}",
+    path="/balance/{number_account}",
     tags=["Bank actions"],
 )
-def inquiry_balance(num_account: int = Path(
+def inquiry_balance(number_account: int = Path(
     ..., title="Numero de la cuenta",
     description="El numero de la cuenta en la que se quiere consultar el saldo"
     )):
 
-    current_balance = 0
 
-    try:
-        querry = (
-            c.select()
-            .where(c.num_account == num_account)
-            )
-
-        current_balance = querry[0].balance
-        ci_own = querry[0].ci_id
-
-    except Exception as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Account dont exist"
-        )
-
-    return {"Account number":num_account,"CI person": ci_own,"Balance":current_balance}
+    account_select = account_collection.find_one({"number_account":number_account})
+    balance = account_select["balance"]
+    ci = account_select["ci"]
+    return {
+        "ci":ci,
+        "number_account":number_account,
+        "balance":balance
+    }
     
