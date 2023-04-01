@@ -10,15 +10,12 @@ from fastapi import (
 
 from datetime import datetime
 from uuid import uuid4
-
+from typing import List
 from models.person import Person
 
 from models.account import Account
 
-from models.transaction import (
-    Transaction,
-    Transference
-)
+from models.transaction import Transaction
 
 from helpers.exceptions import (
     CIExist,
@@ -103,8 +100,6 @@ def to_deposit(
         if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
             raise AccountDontExist(transaction.number_account)
 
-        update_balance(dict(transaction))
-
         transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
 
         while True:
@@ -114,8 +109,12 @@ def to_deposit(
                 transaction.transactional_code = aux
                 break
 
-        
-        transaction_collection.insert_one(dict(transaction))
+        data = dict(transaction)
+
+        data.pop('number_account_receiver')
+
+        update_balance(data)
+        transaction_collection.insert_one(data)
             
     except AccountDontExist as error:
         raise HTTPException(
@@ -136,7 +135,6 @@ def to_withdrawal(transaction: Transaction=Body(...)):
             raise AccountDontExist(transaction.number_account)
 
         transaction.amount = transaction.amount*(-1)
-        update_balance(dict(transaction))
 
         transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
 
@@ -146,8 +144,14 @@ def to_withdrawal(transaction: Transaction=Body(...)):
             if transaction_collection.count_documents({"transactional_code":aux}) == 0:
                 transaction.transactional_code = aux
                 break
+        
+        data = dict(transaction)
 
-        transaction_collection.insert_one(dict(transaction))
+        data.pop('number_account_receiver')
+
+        update_balance(data)
+
+        transaction_collection.insert_one(data)
         
     except AccountDontExist as error:
         raise HTTPException(
@@ -166,7 +170,7 @@ def to_withdrawal(transaction: Transaction=Body(...)):
     path="/to/transfer",
     tags=["Bank actions"]
 )
-def to_transfer(transaction: Transference=Body(...)):
+def to_transfer(transaction: Transaction=Body(...)):
     try:
         if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
             raise AccountDontExist(transaction.number_account)
@@ -210,6 +214,7 @@ def to_transfer(transaction: Transference=Body(...)):
 
 @app.get(
     path="/balance/{number_account}",
+    response_model=Account,
     tags=["Bank actions"],
 )
 def inquiry_balance(number_account: int = Path(
@@ -218,12 +223,45 @@ def inquiry_balance(number_account: int = Path(
     )):
 
 
-    account_select = account_collection.find_one({"number_account":number_account})
-    balance = account_select["balance"]
-    ci = account_select["ci"]
-    return {
-        "ci":ci,
-        "number_account":number_account,
-        "balance":balance
-    }
+    account_select = dict(account_collection.find_one({"number_account":number_account}))
+    account_select.pop("_id")
+    account_select["created_at"] = datetime.strptime(account_select["created_at"],"%d-%m-%Y %H:%M:%S")
+
+    return account_select
+
+
+@app.get(
+    path="/accounts/{ci}",
+    response_model=List[Account]
+)
+def get_accounts(ci: str = Path(
+    ..., title="Cedula",
+    description="Es la cedula de la persona")):
+
+
+    accounts = list(account_collection.find({"ci":ci}))
+
+    for i in range(len(accounts)):
+        accounts[i].pop('_id')
+        accounts[i]["created_at"] = datetime.strptime(accounts[i]["created_at"],"%d-%m-%Y %H:%M:%S")
+        
+    return accounts
+
     
+
+@app.get(
+    path="/transactions/{number_account}",
+    response_model=List[Transaction]
+)
+def get_transactions(number_account: int = Path(
+    ..., title="Numero de la cuenta",
+    description="El numero de la cuenta en la que se quiere consultar el saldo"
+    )):
+
+    transactions = list(transaction_collection.find({"number_account":number_account}))
+
+    for i in range(len(transactions)):
+        transactions[i].pop('_id')
+        transactions[i]["transaction_date"] = datetime.strptime(transactions[i]["transaction_date"],"%d-%m-%Y %H:%M:%S")
+
+    return transactions

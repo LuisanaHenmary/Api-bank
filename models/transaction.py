@@ -32,10 +32,8 @@ class Transaction(BaseModel):
         description="Es la fecha en que fue realizada la transaccion"
     )
 
-class Transference(Transaction):
-    number_account_receiver: int = Field(
-        ...,
+    number_account_receiver: Optional[int] = Field(
         title="numero de cuenta",
-        description="Es el numero de cuenta del receptor",
+        description="Es el numero de cuenta del receptor, cuando es transferencia",
         example=1
     )
