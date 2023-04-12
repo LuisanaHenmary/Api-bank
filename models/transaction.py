@@ -37,9 +37,3 @@ class Transaction(BaseModel):
         description="Es el numero de cuenta del receptor, cuando es transferencia",
         example=1
     )
-
-    amount_receiver: Optional[int] = Field(
-        title="Monto para receptor",
-        description="Monto que recibe el receptor en la transferencia",
-        example=500
-    )
