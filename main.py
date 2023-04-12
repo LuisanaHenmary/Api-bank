@@ -171,6 +171,9 @@ def to_withdrawal(transaction: Transaction=Body(...)):
     tags=["Bank actions"]
 )
 def to_transfer(transaction: Transaction=Body(...)):
+
+    amount = transaction.amount
+
     try:
         if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
             raise AccountDontExist(transaction.number_account)
@@ -180,14 +183,17 @@ def to_transfer(transaction: Transaction=Body(...)):
 
         update_balance({
             "number_account":transaction.number_account,
-            "amount":transaction.amount*(-1)
+            "amount":amount*(-1)
         })
 
         update_balance({
             "number_account":transaction.number_account_receiver,
-            "amount":transaction.amount
+            "amount":amount
         })
 
+
+        transaction.amount = amount*(-1)
+        transaction.amount_receiver = amount
         transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
 
         while True:
