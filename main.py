@@ -191,9 +191,6 @@ def to_transfer(transaction: Transaction=Body(...)):
             "amount":amount
         })
 
-
-        transaction.amount = amount*(-1)
-        transaction.amount_receiver = amount
         transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
 
         while True:
@@ -203,7 +200,12 @@ def to_transfer(transaction: Transaction=Body(...)):
                 transaction.transactional_code = aux
                 break
         
-        transaction_collection.insert_one(dict(transaction))
+        transfer = dict(transaction)
+
+        transfer["amount"] = amount*(-1)
+        transfer["receiver_amount"] = amount
+
+        transaction_collection.insert_one(transfer)
 
         return transaction
 
