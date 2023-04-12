@@ -172,8 +172,6 @@ def to_withdrawal(transaction: Transaction=Body(...)):
 )
 def to_transfer(transaction: Transaction=Body(...)):
 
-    amount = transaction.amount
-
     try:
         if account_collection.count_documents({"number_account":transaction.number_account}) == 0:
             raise AccountDontExist(transaction.number_account)
@@ -183,12 +181,12 @@ def to_transfer(transaction: Transaction=Body(...)):
 
         update_balance({
             "number_account":transaction.number_account,
-            "amount":amount*(-1)
+            "amount":transaction.amount*(-1)
         })
 
         update_balance({
             "number_account":transaction.number_account_receiver,
-            "amount":amount
+            "amount":transaction.amount
         })
 
         transaction.transaction_date = datetime.today().strftime("%d-%m-%Y %H:%M:%S")
@@ -202,8 +200,8 @@ def to_transfer(transaction: Transaction=Body(...)):
         
         transfer = dict(transaction)
 
-        transfer["amount"] = amount*(-1)
-        transfer["receiver_amount"] = amount
+        transfer["amount"] = transaction.amount*(-1)
+        transfer["receiver_amount"] = transaction.amount
 
         transaction_collection.insert_one(transfer)
 
